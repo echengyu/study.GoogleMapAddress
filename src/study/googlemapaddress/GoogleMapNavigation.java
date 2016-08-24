@@ -4,7 +4,6 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
@@ -22,6 +21,8 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -29,9 +30,7 @@ import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.location.Address;
 import android.location.Criteria;
-import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Bundle;
@@ -54,14 +53,14 @@ public class GoogleMapNavigation extends Activity {
 	private LocationManager lms = null;
 	private Double longitude = 0.0;	//取得經度
 	private Double latitude = 0.0;	//取得緯度
-	private String returnAddress = "0";
 	
 	private EditText et_lbs_keyword;
 	private Button btn_lbs_searchKeyword;
-	private TextView tvLatLng;
+	private TextView tvLatLng;	
+	
 	private String mapAddressUrl = "";
-	private Double lat, lng; 
-	private String latlng;	
+	private String formatted_address = "";
+	private LatLng latlngAddress;
 	private Handler mHandler;
 	protected static final int REFRESH_DATA = 0x00000001;
 	private Dialog dialog;
@@ -73,6 +72,7 @@ public class GoogleMapNavigation extends Activity {
 		
 		// 設定本頁面為直向
 		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+		
 		
 		mGoogleMap = ((MapFragment)getFragmentManager().findFragmentById(R.id.frg_lbs_map)).getMap();
 		mGoogleMap.setMyLocationEnabled(true);
@@ -139,8 +139,8 @@ public class GoogleMapNavigation extends Activity {
 			longitude = location.getLongitude();	//取得經度
 			latitude = location.getLatitude();	//取得緯度
 			
-			LatLng latLng = new LatLng(latitude, longitude);
-			moveMap(latLng, 18.0F);
+//			LatLng latLng = new LatLng(latitude, longitude);
+//			moveMap(latLng, 18.0F);
 			
 			String Long1 = String.valueOf(longitude).substring(0,String.valueOf(longitude).lastIndexOf(".")).toString();
 			String Long2 = String.valueOf(longitude).substring(String.valueOf(longitude).indexOf(".")+1,Long1.length()+7).toString();
@@ -162,6 +162,7 @@ public class GoogleMapNavigation extends Activity {
 	
 	/**
 	 * 用關鍵字搜尋地標
+	 * 使用 Google Maps JavaScript API
 	 * 
 	 * @param keyword
 	 */
@@ -171,8 +172,10 @@ public class GoogleMapNavigation extends Activity {
 			String unitStr = URLEncoder.encode(keyword, "utf8");  //字體要utf8編碼			
 			StringBuilder sb = new StringBuilder("https://maps.googleapis.com/maps/api/geocode/json");
 			sb.append("?address=" + unitStr);
-			sb.append("&key=AIzaSyCAWEE5Zowaenzf4qSYIvAP8ph3mcv0B6Q");			
+			sb.append("&key=AIzaSyCAWEE5Zowaenzf4qSYIvAP8ph3mcv0B6Q");
+			sb.append("&language=zh-TW");
 			mapAddressUrl = sb.toString();
+			Log.e("mapAddressUrl", mapAddressUrl);
 			dialog = ProgressDialog.show(GoogleMapNavigation.this, null, getString(R.string.loading_wait),true);
 			storeRegIdinServerread();
 			
@@ -205,29 +208,43 @@ public class GoogleMapNavigation extends Activity {
 							// String to JSONObject
 							obj = new JSONObject(strResult);
 							
-							// Get "status" to JSONObject
+							// status
 							String status = obj.getString("status");
 							
 							// 如果  "status" 是 "OK" 代表查詢成功
 							if (status.equals("OK")) {
 								
-								// Get "results" to JSONArray
+								// results
 								String stringResults = obj.getString("results");
 								JSONArray arrayResults = new JSONArray(stringResults);
 								JSONObject objectResults = arrayResults.getJSONObject(0);
+								
+								// formatted_address
+								formatted_address = objectResults.getString("formatted_address");
+								
+								// geometry
 								String stringGeometry = objectResults.getString("geometry");
 								JSONObject objectGeometry = new JSONObject(stringGeometry);
+								
+								// location
 								String stringLocation = objectGeometry.getString("location");
-								JSONObject objectLocation = new JSONObject(stringLocation);
+								JSONObject objectLocation = new JSONObject(stringLocation);						
+								latlngAddress = new LatLng(objectLocation.getDouble("lat"), objectLocation.getDouble("lng"));
+								Log.e("latlngAddress", latlngAddress.toString());
 								
-								lat = objectLocation.getDouble("lat");
-								lng = objectLocation.getDouble("lng");
-								Log.e("location.Double", lat+","+lng);
+						        // Clears all the existing markers
+								mGoogleMap.clear();
 								
-								// location to String
-								latlng = objectLocation.get("lat")+","+objectLocation.get("lng");
+								// 簡易型 Marker
+								Marker melbourne = mGoogleMap.addMarker(new MarkerOptions()
+				                          .position(latlngAddress)
+				                          .title(formatted_address));
+								melbourne.showInfoWindow();
+								
+								// 移動地圖到搜尋解果座標
+								moveMap(latlngAddress, 18.0F);
 
-								tvLatLng.setText(latlng);
+								tvLatLng.setText(latlngAddress.toString() + "\n" + formatted_address);
 							}else{
 								tvLatLng.setText(getString(R.string.no_results));
 							}
@@ -310,3 +327,5 @@ public class GoogleMapNavigation extends Activity {
 	    mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
 	}
 }
+
+
