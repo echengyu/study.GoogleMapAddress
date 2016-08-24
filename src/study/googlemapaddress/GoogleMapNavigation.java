@@ -4,6 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
@@ -15,13 +16,28 @@ import org.apache.http.util.EntityUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.model.CameraPosition;
+import com.google.android.gms.maps.model.LatLng;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.ProgressDialog;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.location.Address;
+import android.location.Criteria;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
@@ -33,6 +49,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class GoogleMapNavigation extends Activity {
+	
+	private GoogleMap mGoogleMap;
+	private LocationManager lms = null;
+	private Double longitude = 0.0;	//取得經度
+	private Double latitude = 0.0;	//取得緯度
+	private String returnAddress = "0";
 	
 	private EditText et_lbs_keyword;
 	private Button btn_lbs_searchKeyword;
@@ -49,6 +71,23 @@ public class GoogleMapNavigation extends Activity {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.google_map_navigation);
 		
+		// 設定本頁面為直向
+		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+		
+		mGoogleMap = ((MapFragment)getFragmentManager().findFragmentById(R.id.frg_lbs_map)).getMap();
+		mGoogleMap.setMyLocationEnabled(true);
+		mGoogleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		
+		// 取得系統定位服務
+		lms = (LocationManager)(this.getSystemService(GoogleMapNavigation.LOCATION_SERVICE));
+		if (lms.isProviderEnabled(LocationManager.GPS_PROVIDER) || lms.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+			//如果GPS或網路定位開啟，呼叫locationServiceInitial()更新位置
+			locationServiceInitial();
+		} else {
+			Toast.makeText(this, "請開啟定位服務", Toast.LENGTH_LONG).show();
+			startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)); //開啟設定頁面
+		}
+		
 		tvLatLng = (TextView) findViewById(R.id.tvLatLng);
 		et_lbs_keyword = (EditText) findViewById(R.id.et_lbs_keyword);		
 		et_lbs_keyword.setText("屏東縣恆春鎮白沙路23號");	
@@ -59,6 +98,8 @@ public class GoogleMapNavigation extends Activity {
 
 			@Override
 			public void onClick(View v) {
+				
+				locationServiceInitial();
 				
 				// 關閉鍵盤
 				InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -73,6 +114,51 @@ public class GoogleMapNavigation extends Activity {
 			}
 		});
 	}
+	
+	private void locationServiceInitial() {
+		lms = (LocationManager)getSystemService(LOCATION_SERVICE); //取得系統定位服務
+		
+		// Creating a criteria object to retrieve provider
+		Criteria criteria = new Criteria();
+
+		// Getting the name of the best provider
+		String provider = lms.getBestProvider(criteria, true);
+		Log.e("provider", provider);
+
+		// Getting Current Location
+		Location location = lms.getLastKnownLocation(LocationManager.GPS_PROVIDER); //使用GPS定位座標
+//		Log.e("location", location.toString());
+
+		getLocation(location);
+
+	}
+	
+	private void getLocation(Location location) {	// 將定位資訊顯示在畫面中
+		if(location != null) {
+			
+			longitude = location.getLongitude();	//取得經度
+			latitude = location.getLatitude();	//取得緯度
+			
+			LatLng latLng = new LatLng(latitude, longitude);
+			moveMap(latLng, 18.0F);
+			
+			String Long1 = String.valueOf(longitude).substring(0,String.valueOf(longitude).lastIndexOf(".")).toString();
+			String Long2 = String.valueOf(longitude).substring(String.valueOf(longitude).indexOf(".")+1,Long1.length()+7).toString();
+			longitude = Double.valueOf(Long1+"."+Long2);
+			
+			String Lat1 = String.valueOf(latitude).substring(0,String.valueOf(latitude).lastIndexOf(".")).toString();
+			String Lat2 = String.valueOf(latitude).substring(String.valueOf(latitude).indexOf(".")+1,Lat1.length()+7).toString();
+			latitude = Double.valueOf(Lat1+"."+Lat2);
+			
+			Log.v("經度", String.valueOf(longitude));
+			Log.v("緯度", String.valueOf(latitude));
+
+		}
+		else {
+			Toast.makeText(this, "無法定位座標", Toast.LENGTH_LONG).show();
+		}
+	}
+	
 	
 	/**
 	 * 用關鍵字搜尋地標
@@ -114,7 +200,7 @@ public class GoogleMapNavigation extends Activity {
 					if (strResult != null) {
 						JSONObject obj;
 						try {
-							Log.e("strResult", strResult);
+//							Log.e("strResult", strResult);
 							
 							// String to JSONObject
 							obj = new JSONObject(strResult);
@@ -199,5 +285,28 @@ public class GoogleMapNavigation extends Activity {
 			e.printStackTrace();
 		}
 		return null;
+	}
+	
+	/**
+	 * 移動地圖到指定位置
+	 * 
+	 * @param place
+	 * 			座標
+	 * 
+	 * @param zoom
+	 * 			縮放比
+	 * 
+	 * @return none
+	 */
+	private void moveMap(LatLng place, float zoom) {
+	    // 建立地圖攝影機的位置物件
+	    CameraPosition cameraPosition = 
+	            new CameraPosition.Builder()
+	            .target(place)
+	            .zoom(zoom)
+	            .build();
+	 
+	    // 使用動畫的效果移動地圖
+	    mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
 	}
 }

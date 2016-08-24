@@ -26,6 +26,13 @@
             android:layout_weight="1"
             android:text="@string/find" />
     </LinearLayout>
+    
+    <fragment
+        android:id="@+id/frg_lbs_map"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        android:layout_weight="80"
+        class="com.google.android.gms.maps.MapFragment" />
 
     <TextView
         android:id="@+id/tvLatLng"
