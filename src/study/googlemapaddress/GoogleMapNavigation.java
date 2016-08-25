@@ -19,6 +19,7 @@ import org.json.JSONObject;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.GoogleMap.OnInfoWindowClickListener;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
@@ -28,15 +29,19 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.location.Criteria;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
@@ -47,23 +52,27 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class GoogleMapNavigation extends Activity {
+import com.google.android.gms.location.LocationListener;
+
+public class GoogleMapNavigation extends Activity implements LocationListener{
 	
 	private GoogleMap mGoogleMap;
-	private LocationManager lms = null;
-	private Double longitude = 0.0;	//取得經度
-	private Double latitude = 0.0;	//取得緯度
 	
 	private EditText et_lbs_keyword;
 	private Button btn_lbs_searchKeyword;
 	private TextView tvLatLng;	
 	
-	private String mapAddressUrl = "";
-	private String formatted_address = "";
-	private LatLng latlngAddress;
+	private String mapAddressUrl = "";					// 查詢網址	
+	private String formatted_address = "";				// 地址
+	private LatLng latlngAddress = new LatLng(0, 0);	// 地址座標
+	private LatLng latlngLocation = new LatLng(0, 0);	// 本地座標
+	private GmsLocationUtil mGmsLocationUtil;			// Google Play Service Locaton APIs
+    private int locationUpdateCount = 1;
+    private boolean firstSetMapLocation = false;
+	
 	private Handler mHandler;
 	protected static final int REFRESH_DATA = 0x00000001;
-	private Dialog dialog;
+	private Dialog dialog;    
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -73,21 +82,14 @@ public class GoogleMapNavigation extends Activity {
 		// 設定本頁面為直向
 		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 		
+		mGmsLocationUtil = new GmsLocationUtil(this);
 		
 		mGoogleMap = ((MapFragment)getFragmentManager().findFragmentById(R.id.frg_lbs_map)).getMap();
 		mGoogleMap.setMyLocationEnabled(true);
 		mGoogleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-		
-		// 取得系統定位服務
-		lms = (LocationManager)(this.getSystemService(GoogleMapNavigation.LOCATION_SERVICE));
-		if (lms.isProviderEnabled(LocationManager.GPS_PROVIDER) || lms.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-			//如果GPS或網路定位開啟，呼叫locationServiceInitial()更新位置
-			locationServiceInitial();
-		} else {
-			Toast.makeText(this, "請開啟定位服務", Toast.LENGTH_LONG).show();
-			startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)); //開啟設定頁面
-		}
-		
+
+
+				
 		tvLatLng = (TextView) findViewById(R.id.tvLatLng);
 		et_lbs_keyword = (EditText) findViewById(R.id.et_lbs_keyword);		
 		et_lbs_keyword.setText("屏東縣恆春鎮白沙路23號");	
@@ -99,66 +101,104 @@ public class GoogleMapNavigation extends Activity {
 			@Override
 			public void onClick(View v) {
 				
-				locationServiceInitial();
+				if(haveInternet()){
 				
-				// 關閉鍵盤
-				InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-				imm.hideSoftInputFromWindow(et_lbs_keyword.getWindowToken(), 0); // et_setting_name為獲取焦點的EditText
-				// 搜尋關鍵字
-				String keyword = et_lbs_keyword.getText().toString();
-				if (!TextUtils.isEmpty(keyword)) {
-					searchKeyword(keyword);
-				} else {
-					Toast.makeText(GoogleMapNavigation.this, getString(R.string.please_enter_an_address), Toast.LENGTH_LONG).show();
-				}				
+					// 關閉鍵盤
+					InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+					imm.hideSoftInputFromWindow(et_lbs_keyword.getWindowToken(), 0); // et_setting_name為獲取焦點的EditText
+					// 搜尋關鍵字
+					String keyword = et_lbs_keyword.getText().toString();
+					if (!TextUtils.isEmpty(keyword)) {
+						searchKeyword(keyword);
+					} else {
+						Toast.makeText(GoogleMapNavigation.this, getString(R.string.please_enter_an_address), Toast.LENGTH_LONG).show();
+					}		
+				}
 			}
 		});
-	}
-	
-	private void locationServiceInitial() {
-		lms = (LocationManager)getSystemService(LOCATION_SERVICE); //取得系統定位服務
 		
-		// Creating a criteria object to retrieve provider
-		Criteria criteria = new Criteria();
+		// 簡易型 Marker，點擊後直接進入導航
+		mGoogleMap.setOnInfoWindowClickListener(new OnInfoWindowClickListener() {
 
-		// Getting the name of the best provider
-		String provider = lms.getBestProvider(criteria, true);
-		Log.e("provider", provider);
+			 @ Override
+			public void onInfoWindowClick(Marker marker) {
+				 
+				// 判定 Google Map 是否安裝
+				if (isAvilible(GoogleMapNavigation.this, "com.google.android.apps.maps")) {
 
-		// Getting Current Location
-		Location location = lms.getLastKnownLocation(LocationManager.GPS_PROVIDER); //使用GPS定位座標
-//		Log.e("location", location.toString());
+					// 導航座標設定
+					String vDirectionUrl = "https://maps.google.com/maps?f=d" 
+							+ "&saddr="	+ latlngLocation.latitude + "," + latlngLocation.longitude 
+							+ "&daddr=" + latlngAddress.latitude + "," + latlngAddress.longitude + "&hl=tw";
 
-		getLocation(location);
+					// 關閉本頁 activity
+					finish();
 
+					// 在 Google 地圖 App 顯示導航
+					Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(vDirectionUrl));
+					intent.setClassName("com.google.android.apps.maps",
+							"com.google.android.maps.MapsActivity");
+					startActivity(intent);
+
+				// 如果 Google Map 未安裝，轉跳到 Google Play Store 下載頁面
+				} else {
+					Toast.makeText(GoogleMapNavigation.this, "您尚未安裝 Google Map", Toast.LENGTH_LONG).show();
+					Uri uri = Uri.parse("market://details?id=com.google.android.apps.maps");
+					Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+					GoogleMapNavigation.this.startActivity(intent);
+				}
+			}
+		});		
 	}
 	
-	private void getLocation(Location location) {	// 將定位資訊顯示在畫面中
-		if(location != null) {
-			
-			longitude = location.getLongitude();	//取得經度
-			latitude = location.getLatitude();	//取得緯度
-			
-//			LatLng latLng = new LatLng(latitude, longitude);
-//			moveMap(latLng, 18.0F);
-			
-			String Long1 = String.valueOf(longitude).substring(0,String.valueOf(longitude).lastIndexOf(".")).toString();
-			String Long2 = String.valueOf(longitude).substring(String.valueOf(longitude).indexOf(".")+1,Long1.length()+7).toString();
-			longitude = Double.valueOf(Long1+"."+Long2);
-			
-			String Lat1 = String.valueOf(latitude).substring(0,String.valueOf(latitude).lastIndexOf(".")).toString();
-			String Lat2 = String.valueOf(latitude).substring(String.valueOf(latitude).indexOf(".")+1,Lat1.length()+7).toString();
-			latitude = Double.valueOf(Lat1+"."+Lat2);
-			
-			Log.v("經度", String.valueOf(longitude));
-			Log.v("緯度", String.valueOf(latitude));
+    private void stopUpdateLocation() {
+        mGmsLocationUtil.stopUpdateLocation(this);
+    }
+    
+    private void startUpdateLocation() {
+        mGmsLocationUtil.startUpdateLocation(this);
+    }
+    
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mGmsLocationUtil.connect();
+    }
 
-		}
-		else {
-			Toast.makeText(this, "無法定位座標", Toast.LENGTH_LONG).show();
-		}
-	}
-	
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mGmsLocationUtil.isConnected() && mGmsLocationUtil.isRequestLocationUpdates()) {
+            startUpdateLocation();
+        }
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopUpdateLocation();
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mGmsLocationUtil.disConnect();
+    }
+    
+    @Override
+    public void onLocationChanged(Location location) {
+    	
+    	latlngLocation = new LatLng(location.getLatitude(), location.getLongitude());
+    	
+    	if(firstSetMapLocation != true){
+            moveMap(latlngLocation, 18.0F);
+            firstSetMapLocation = true;
+    	}
+    	
+    	Log.e("latlngLocation", latlngLocation.toString());
+    	tvLatLng.setText("latlngLocation, count: " + locationUpdateCount++ + "\n" + latlngLocation.toString() 
+    		+ "\n" + "formatted_address: " + formatted_address + "\n" + latlngAddress.toString());
+    }
 	
 	/**
 	 * 用關鍵字搜尋地標
@@ -244,7 +284,10 @@ public class GoogleMapNavigation extends Activity {
 								// 移動地圖到搜尋解果座標
 								moveMap(latlngAddress, 18.0F);
 
-								tvLatLng.setText(latlngAddress.toString() + "\n" + formatted_address);
+						    	Log.e("latlngLocation", latlngLocation.toString());
+						    	tvLatLng.setText("latlngLocation, count: " + locationUpdateCount++ + "\n" + latlngLocation.toString() 
+						    		+ "\n" + "formatted_address: " + formatted_address + "\n" + latlngAddress.toString());
+						    	
 							}else{
 								tvLatLng.setText(getString(R.string.no_results));
 							}
@@ -325,6 +368,63 @@ public class GoogleMapNavigation extends Activity {
 	 
 	    // 使用動畫的效果移動地圖
 	    mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+	}
+	
+	/**
+	 * 檢查手機上是否安裝了指定的軟件
+	 * @param 	context
+	 * @param 	packageName：應用包名
+	 * @return
+	 */
+    private boolean isAvilible(Context context, String packageName){ 
+        // 獲取packagemanager 
+        final PackageManager packageManager = context.getPackageManager();
+        // 獲取所有已安裝程序的包信息 
+        List<PackageInfo> packageInfos = packageManager.getInstalledPackages(0);
+        // 用於存儲所有已安裝程序的包名 
+        List<String> packageNames = new ArrayList<String>();
+        // 從pinfo中將包名字逐一取出，壓入pName list中 
+        if(packageInfos != null){ 
+            for(int i = 0; i < packageInfos.size(); i++){ 
+                String packName = packageInfos.get(i).packageName; 
+                packageNames.add(packName); 
+            } 
+        } 
+        // 判斷packageNames中是否有目標程序的包名，有TRUE，沒有FALSE 
+        return packageNames.contains(packageName);
+    }
+	
+    // 判斷是否有網路
+    private boolean haveInternet() {
+    	boolean result = false;
+    	ConnectivityManager connManager = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+    	NetworkInfo info = connManager.getActiveNetworkInfo();
+    	if (info == null || !info.isConnected()) {
+    		result = false;
+    	} else {
+    		if (!info.isAvailable()) {
+    			result = false;
+    		} else {
+    			result = true;
+    		}
+    	}
+    	return result;
+    }
+	
+	/**
+	  * 判斷GPS是否開啟，GPS或者AGPS開啟一個就認為是開啟的
+	  */
+	private boolean isOpenGps() {
+
+		LocationManager locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
+		// 通過GPS衛星定位，定位級別可以精確到街（通過24顆衛星定位，在室外和空曠的地方定位準確、速度快）
+		boolean gps = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+		// 通過WLAN或移動網路(3G/2G)確定的位置（也稱作AGPS，輔助GPS定位。主要用於在室內或遮蓋物（建築群或茂密的深林等）密集的地方定位）
+		boolean network = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+		if (gps || network) {
+			return true;
+		}
+		return false;
 	}
 }
 
