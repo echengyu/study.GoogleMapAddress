@@ -20,6 +20,7 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.UiSettings;
 import com.google.android.gms.maps.GoogleMap.OnInfoWindowClickListener;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
@@ -87,6 +88,16 @@ public class GoogleMapNavigation extends Activity implements LocationListener{
 		mGoogleMap.setMyLocationEnabled(true);
 		mGoogleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 		
+	    // 介面顯示設定
+	    UiSettings uis = mGoogleMap.getUiSettings();
+	    uis.setZoomControlsEnabled(true); 		// 顯示縮放按鈕
+	    uis.setCompassEnabled(true); 			// 顯示指北針
+	    uis.setMyLocationButtonEnabled(true); 	// 顯示自己位置按鈕
+	    uis.setScrollGesturesEnabled(true); 	// 開啟地圖捲動手勢
+	    uis.setZoomGesturesEnabled(true); 		// 開啟地圖縮放手勢
+	    uis.setTiltGesturesEnabled(true); 		// 開啟地圖傾斜手勢
+	    uis.setRotateGesturesEnabled(true); 	// 開啟地圖旋轉手勢
+		
 		// 判定是否有開啟定位
 		if(isOpenGps()){
 			startUpdateLocation();
@@ -133,7 +144,8 @@ public class GoogleMapNavigation extends Activity implements LocationListener{
 					// 導航座標設定
 					String vDirectionUrl = "https://maps.google.com/maps?f=d" 
 							+ "&saddr="	+ latlngLocation.latitude + "," + latlngLocation.longitude 
-							+ "&daddr=" + latlngAddress.latitude + "," + latlngAddress.longitude + "&hl=tw";
+							+ "&daddr=" + latlngAddress.latitude + "," + latlngAddress.longitude 
+							+ "&hl=tw";
 
 					// 關閉本頁 activity
 					finish();
