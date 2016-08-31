@@ -16,6 +16,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
@@ -52,8 +53,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.location.LocationListener;
-
 public class GoogleMapNavigation extends Activity implements LocationListener{
 	
 	private GoogleMap mGoogleMap;
@@ -87,9 +86,14 @@ public class GoogleMapNavigation extends Activity implements LocationListener{
 		mGoogleMap = ((MapFragment)getFragmentManager().findFragmentById(R.id.frg_lbs_map)).getMap();
 		mGoogleMap.setMyLocationEnabled(true);
 		mGoogleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-
-
-				
+		
+		// 判定是否有開啟定位
+		if(isOpenGps()){
+			startUpdateLocation();
+		}else{
+			Toast.makeText(GoogleMapNavigation.this, "請打開定位功能", Toast.LENGTH_LONG).show();
+		}
+			
 		tvLatLng = (TextView) findViewById(R.id.tvLatLng);
 		et_lbs_keyword = (EditText) findViewById(R.id.et_lbs_keyword);		
 		et_lbs_keyword.setText("屏東縣恆春鎮白沙路23號");	
