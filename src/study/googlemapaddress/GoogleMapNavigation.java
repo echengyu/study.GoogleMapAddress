@@ -80,10 +80,12 @@ public class GoogleMapNavigation extends Activity implements LocationListener{
 		setContentView(R.layout.google_map_navigation);
 		
 		// 設定本頁面為直向
-		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);    
 		
+		// Google Play Service Locaton APIs
 		mGmsLocationUtil = new GmsLocationUtil(this);
 		
+		// Google Map
 		mGoogleMap = ((MapFragment)getFragmentManager().findFragmentById(R.id.frg_lbs_map)).getMap();
 		mGoogleMap.setMyLocationEnabled(true);
 		mGoogleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
@@ -443,5 +445,3 @@ public class GoogleMapNavigation extends Activity implements LocationListener{
 		return false;
 	}
 }
-
-
